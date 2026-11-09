@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import Field from "../components/Field.jsx";
 import { useStore } from "../context/useStore.js";
 import { kes } from "../utils/money.js";
@@ -9,7 +9,14 @@ export default function Account() {
   const { user, users, orders, signIn, signUp, signOut } = useStore();
   const navigate = useNavigate();
   const { state } = useLocation();
-  const from = state?.from || "/"; // where to go after logging in
+  const from = state?.from || "/"; // where the visitor was heading
+
+  // Where to go after signing in: admins go to their panel, everyone else
+  // returns to where they were, but never to an admin address.
+  const destinationFor = (u) => {
+    if (u.role === "admin") return "/admin";
+    return from.startsWith("/admin") ? "/" : from;
+  };
 
   const [inForm, setInForm] = useState({ username: "", password: "" });
   const [inErrors, setInErrors] = useState({});
@@ -30,11 +37,11 @@ export default function Account() {
     const errors = validateSignIn(inForm);
     let signedIn = null;
     if (!Object.keys(errors).length) {
-      signedIn = signIn(inForm.username, inForm.password);
+      signedIn = signIn(inForm.username, inForm.password); // user object or null
       if (!signedIn) errors.form = "Incorrect username or password";
     }
     setInErrors(errors);
-    if (signedIn) navigate(signedIn.role === "admin" ? "/admin" : from);
+    if (signedIn) navigate(destinationFor(signedIn)); // one redirect only
   };
 
   const handleSignUp = (e) => {
@@ -42,12 +49,28 @@ export default function Account() {
     const errors = validateSignUp(upForm, users);
     setUpErrors(errors);
     if (!Object.keys(errors).length) {
-      signUp(upForm);
-      navigate(from);
+      signUp(upForm); // new accounts are always customers
+      navigate(from.startsWith("/admin") ? "/" : from);
     }
   };
 
   if (user) {
+    // Admins have no shopping history: send them to their panel
+    if (user.role === "admin") {
+      return (
+        <section className="panel">
+          <h2>Hello, {user.username}</h2>
+          <p className="muted">{user.email} · Administrator</p>
+          <Link className="btn" to="/admin">
+            Go to admin panel
+          </Link>{" "}
+          <button className="btn ghost" onClick={signOut}>
+            Sign out
+          </button>
+        </section>
+      );
+    }
+
     // Only this customer's orders
     const myOrders = orders.filter((o) => o.user === user.username);
 
@@ -62,6 +85,20 @@ export default function Account() {
           <div className="row" key={o.id}>
             <span>
               #{o.id} · {o.items.map((i) => `${i.qty}× ${i.name}`).join(", ")}
+              {o.delivery && (
+                <>
+                  <br />
+                  <small className="muted">
+                    Delivery: {o.delivery.courier} on {o.delivery.date}
+                  </small>
+                </>
+              )}
+              {o.cancelReason && (
+                <>
+                  <br />
+                  <small className="muted">Cancelled: {o.cancelReason}</small>
+                </>
+              )}
             </span>
             <span>
               {kes(o.total)} · <strong>{o.status}</strong>
@@ -112,13 +149,15 @@ export default function Account() {
 
         <form className="col" onSubmit={handleSignUp} noValidate>
           <h2>Sign up</h2>
+          {/* autoComplete="off": stops the browser filling in a saved login
+              (such as admin) where a brand new username belongs */}
           <Field
             label="Username"
             name="username"
             value={upForm.username}
             onChange={change(setUpForm)}
             error={upErrors.username}
-            autoComplete="username"
+            autoComplete="off"
           />
           <Field
             label="Email address"
