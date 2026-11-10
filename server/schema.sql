@@ -107,3 +107,12 @@ CREATE TABLE audit_logs (
 INSERT INTO categories (name, description) VALUES
     ('Skincare', 'Cleansers, serums, moisturisers'),
     ('Make-up',  'Face, lips and eyes');
+
+
+USE tint_tone;
+
+ALTER TABLE orders 
+ADD COLUMN delivery_lat DECIMAL(10, 8) NULL,
+ADD COLUMN delivery_lng DECIMAL(11, 8) NULL,
+ADD COLUMN delivery_fee DECIMAL(10, 2) DEFAULT 0.00;
+    

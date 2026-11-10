@@ -1,11 +1,13 @@
 const express = require('express');
 const crypto = require('crypto');
 const db = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth } = require('../middleware/auth');
+const { stkPush } = require('../utils/mpesa');
+const { releaseOrder } = require('../utils/orders');
 
 const router = express.Router();
 
-// PUBLIC: list active products (search + category filter)
+// PUBLIC: list active products
 router.get('/products', async (req, res) => {
     const { search, category_id } = req.query;
     const where = ['p.is_active = TRUE'];
@@ -37,28 +39,33 @@ router.get('/categories', async (req, res) => {
     }
 });
 
-// CUSTOMER: place an order (the main transaction)
-// Body: { items: [{product_id, quantity}], shipping_address, payment_method, phone?, card? }
-router.post('/orders', requireAuth, requireRole('customer'), async (req, res) => {
-    const { items, shipping_address, payment_method, phone, card } = req.body;
+// CUSTOMER: place an order
+router.post('/orders', async (req, res) => {
+    const { items, shipping_address, payment_method, phone } = req.body;
 
-    // 1. Validate input before touching the database
+    // 1. Validate input
     if (!Array.isArray(items) || items.length === 0)
         return res.status(400).json({ error: 'Your cart is empty.' });
     if (!shipping_address || !shipping_address.trim())
         return res.status(400).json({ error: 'Delivery address is required.' });
     if (!['mpesa', 'card'].includes(payment_method))
         return res.status(400).json({ error: 'Choose M-Pesa or card.' });
-    if (payment_method === 'mpesa' && !/^(07|01)\d{8}$/.test(phone || ''))
+    if (payment_method === 'mpesa' && !/^(07|01|254)\d{8,9}$/.test((phone || '').replace(/\s+/g, '')))
         return res.status(400).json({ error: 'Enter a valid M-Pesa number, e.g. 0712345678.' });
-    if (payment_method === 'card' && !/^\d{16}$/.test((card || '').replace(/\s/g, '')))
-        return res.status(400).json({ error: 'Enter a valid 16-digit card number.' });
     for (const i of items) {
         if (!Number.isInteger(i.product_id) || !Number.isInteger(i.quantity) || i.quantity < 1)
             return res.status(400).json({ error: 'Invalid item in cart.' });
     }
 
-    // Merge duplicate product lines and sort ids (avoids deadlocks)
+    // Format phone number to international format (2547...)
+    let formattedPhone = phone ? String(phone).replace(/\D/g, '') : '';
+    if (formattedPhone.startsWith('0')) {
+        formattedPhone = '254' + formattedPhone.slice(1);
+    } else if (formattedPhone.startsWith('7') || formattedPhone.startsWith('1')) {
+        formattedPhone = '254' + formattedPhone;
+    }
+
+    // Merge duplicate product lines
     const wanted = new Map();
     for (const i of items) wanted.set(i.product_id, (wanted.get(i.product_id) || 0) + i.quantity);
     const ids = [...wanted.keys()].sort((a, b) => a - b);
@@ -67,7 +74,7 @@ router.post('/orders', requireAuth, requireRole('customer'), async (req, res) =>
     try {
         await conn.beginTransaction();
 
-        // 2. Lock each product row, check stock, and take the price from the DATABASE
+        // Lock product row, check stock, calculate database total
         let total = 0;
         const lines = [];
         for (const id of ids) {
@@ -90,42 +97,55 @@ router.post('/orders', requireAuth, requireRole('customer'), async (req, res) =>
             lines.push({ id, qty, price: p.price });
         }
 
-        // 3. Create the order and its line items
+        // Create order row
+        const userId = req.user ? req.user.id : null;
         const [order] = await conn.query(
-            `INSERT INTO orders (user_id, total_amount, order_status, shipping_address)
-             VALUES (?, ?, 'Processing', ?)`,
-            [req.user.id, total, shipping_address.trim()]);
+            `INSERT INTO orders (user_id, total_amount, order_status, shipping_address, delivery_fee)
+             VALUES (?, ?, 'Processing', ?, 0)`,
+            [userId, total, shipping_address.trim()]);
 
         for (const l of lines) {
             await conn.query(
                 `INSERT INTO order_details (order_id, product_id, quantity, unit_price_at_sale)
                  VALUES (?, ?, ?, ?)`,
                 [order.insertId, l.id, l.qty, l.price]);
-            // 4. Deduct stock
             await conn.query(
                 'UPDATE products SET stock_quantity = stock_quantity - ? WHERE product_id = ?',
                 [l.qty, l.id]);
         }
 
-        // 5. Simulated payment (a card ending in 0000 is declined to demo the rollback)
-        const declined = payment_method === 'card' && card.replace(/\s/g, '').endsWith('0000');
-        if (declined) {
-            await conn.rollback();
-            return res.status(402).json({ error: 'Payment declined. Your order was not placed. Try another method.' });
-        }
+        const live = payment_method === 'mpesa' && process.env.MPESA_ENABLED === 'true';
         const ref = (payment_method === 'mpesa' ? 'MP' : 'CD') +
             crypto.randomBytes(4).toString('hex').toUpperCase();
         await conn.query(
             `INSERT INTO payments (order_id, payment_method, transaction_ref, amount, payment_status)
-             VALUES (?, ?, ?, ?, 'Paid')`,
-            [order.insertId, payment_method, ref, total]);
+             VALUES (?, ?, ?, ?, ?)`,
+            [order.insertId, payment_method, live ? null : ref, total, live ? 'Pending' : 'Paid']);
 
-        // 6. Everything worked: save it all at once
         await conn.commit();
+
+        if (live) {
+            try {
+                const r = await stkPush({ phone: formattedPhone, amount: total, orderId: order.insertId });
+                await db.query('UPDATE payments SET checkout_request_id = ? WHERE order_id = ?',
+                    [r.checkoutRequestId, order.insertId]);
+                return res.status(202).json({
+                    message: 'Check your phone and enter your M-Pesa PIN to complete payment.',
+                    order_id: order.insertId,
+                    total: total,
+                    payment_status: 'Pending'
+                });
+            } catch (err) {
+                console.error('STK push failed:', err.message);
+                await releaseOrder(order.insertId, 'Failed');
+                return res.status(502).json({ error: 'Could not start the M-Pesa payment. Your order was not placed.' });
+            }
+        }
+
         res.status(201).json({
             message: 'Order placed successfully.',
             order_id: order.insertId,
-            total,
+            total: total,
             transaction_ref: ref
         });
     } catch (err) {
@@ -137,7 +157,7 @@ router.post('/orders', requireAuth, requireRole('customer'), async (req, res) =>
     }
 });
 
-// CUSTOMER: my order history
+// CUSTOMER: order history
 router.get('/orders/mine', requireAuth, async (req, res) => {
     try {
         const [orders] = await db.query(

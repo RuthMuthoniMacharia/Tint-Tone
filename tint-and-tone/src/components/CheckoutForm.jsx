@@ -4,39 +4,84 @@ import { kes } from "../utils/money.js";
 import { validateCheckout } from "../utils/validate.js";
 
 const EMPTY = { address: "", phone: "", card: "", exp: "", cvv: "" };
+const API = 'http://localhost:5000';
 
-export default function CheckoutForm({ total, onPaid }) {
+export default function CheckoutForm({ cartItems, total, onPaid }) {
   const [method, setMethod] = useState("mpesa");
   const [form, setForm] = useState(EMPTY);
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
 
+  // Delivery map state
+  const [deliveryLat, setDeliveryLat] = useState(null);
+  const [deliveryLng, setDeliveryLng] = useState(null);
+  const [deliveryFee, setDeliveryFee] = useState(0);
+
+  const grandTotal = (Number(total) || 0) + (Number(deliveryFee) || 0);
+
   const change = (e) =>
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const found = validateCheckout(form, method);
+    
+    // Require user to select a delivery point on the map
+    if (!deliveryLat || !deliveryLng) {
+      found.map = "Please select a delivery point on the map.";
+    }
+
     setErrors(found);
     if (Object.keys(found).length) return;
 
     setBusy(true);
-    // Simulated payment: replace with a real API call later
-    setTimeout(() => {
-      setBusy(false);
-      if (method === "card" && form.card.replace(/\s/g, "").endsWith("0000")) {
-        setErrors({
-          pay: "Payment declined. Please retry or use another method.",
-        });
+
+    try {
+      const token = localStorage.getItem("token"); // Retrieve JWT auth token
+
+      const res = await fetch(`${API}/api/orders`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          items: cartItems || [{ product_id: 6, quantity: 1 }], // Fallback to current items
+          shipping_address: form.address.trim(),
+          payment_method: method,
+          phone: form.phone,
+          delivery_lat: deliveryLat,
+          delivery_lng: deliveryLng
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setErrors({ pay: data.error || "Failed to place order. Please try again." });
+        setBusy(false);
         return;
       }
-      onPaid({ address: form.address.trim(), method });
-    }, 1300);
+
+      setBusy(false);
+      onPaid({ 
+        orderId: data.order_id, 
+        address: form.address.trim(), 
+        method, 
+        total: grandTotal,
+        message: data.message 
+      });
+
+    } catch (err) {
+      setBusy(false);
+      setErrors({ pay: "Could not connect to server. Please check your connection." });
+    }
   };
 
   return (
     <form className="stack" onSubmit={handleSubmit} noValidate>
       {errors.pay && <div className="note bad">{errors.pay}</div>}
+      
       <div className="bar">
         <button
           type="button"
@@ -54,14 +99,7 @@ export default function CheckoutForm({ total, onPaid }) {
         </button>
       </div>
 
-      <Field
-        label="Delivery address"
-        name="address"
-        value={form.address}
-        onChange={change}
-        error={errors.address}
-        autoComplete="street-address"
-      />
+
 
       {method === "mpesa" ? (
         <Field
@@ -103,13 +141,25 @@ export default function CheckoutForm({ total, onPaid }) {
         </>
       )}
 
+      {/* Summary Breakdown */}
+      <div style={{ marginTop: '10px', fontSize: '0.9rem' }}>
+        <div className="row">
+          <span>Items Subtotal:</span>
+          <span>{kes(total)}</span>
+        </div>
+        <div className="row">
+          <span>Delivery Fee:</span>
+          <span>{deliveryFee ? kes(deliveryFee) : 'KES 0.00'}</span>
+        </div>
+        <div className="row" style={{ fontWeight: 'bold', fontSize: '1.05rem', borderBottom: 'none' }}>
+          <span>Grand Total:</span>
+          <span>{kes(grandTotal)}</span>
+        </div>
+      </div>
+
       <button className="btn" type="submit" disabled={busy}>
-        {busy ? "Processing payment..." : "Pay " + kes(total)}
+        {busy ? "Processing payment..." : "Pay " + kes(grandTotal)}
       </button>
-      <small className="muted">
-        Simulation only. A card ending in 0000 is declined to demo the retry
-        path.
-      </small>
     </form>
   );
 }
