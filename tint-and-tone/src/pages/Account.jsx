@@ -44,13 +44,14 @@ export default function Account() {
     if (signedIn) navigate(destinationFor(signedIn)); // one redirect only
   };
 
-  const handleSignUp = (e) => {
+  const handleSignUp = async (e) => {
     e.preventDefault();
     const errors = validateSignUp(upForm, users);
     setUpErrors(errors);
     if (!Object.keys(errors).length) {
-      signUp(upForm); // new accounts are always customers
-      navigate(from.startsWith("/admin") ? "/" : from);
+      const result = await signUp(upForm);
+      if (result.error) setUpErrors({ form: result.error });
+      else navigate(from.startsWith("/admin") ? "/" : from);
     }
   };
 
@@ -125,7 +126,7 @@ export default function Account() {
           <h2>Sign in</h2>
           {inErrors.form && <div className="note bad">{inErrors.form}</div>}
           <Field
-            label="Username"
+            label="Email address"
             name="username"
             value={inForm.username}
             onChange={change(setInForm)}
@@ -148,9 +149,13 @@ export default function Account() {
         </form>
 
         <form className="col" onSubmit={handleSignUp} noValidate>
-          <h2>Sign up</h2>
-          {/* autoComplete="off": stops the browser filling in a saved login
-              (such as admin) where a brand new username belongs */}
+  <h2>Sign up</h2>
+  {upErrors.form && <div className="note bad">{upErrors.form}</div>}
+  {/* autoComplete="off": stops the browser filling in a saved login
+      (such as admin) where a brand new username belongs */}
+
+       
+
           <Field
             label="Username"
             name="username"

@@ -104,7 +104,7 @@ export default function Cart() {
             </button>
           </>
         ) : (
-          <CheckoutForm total={total} onPaid={handlePaid} />
+         <CheckoutForm cartItems={cartItems} total={total} onPaid={handlePaid} />
         )}
       </section>
     </div>

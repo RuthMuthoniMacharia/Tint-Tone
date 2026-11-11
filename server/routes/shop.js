@@ -40,7 +40,7 @@ router.get('/categories', async (req, res) => {
 });
 
 // CUSTOMER: place an order
-router.post('/orders', async (req, res) => {
+router.post('/orders', requireAuth, async (req, res) => {
     const { items, shipping_address, payment_method, phone } = req.body;
 
     // 1. Validate input

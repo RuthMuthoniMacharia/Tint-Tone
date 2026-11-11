@@ -4,6 +4,8 @@ import { PRODUCTS } from "../data/products.js";
 import { shippingFor } from "../utils/money.js";
 import { nextStatus } from "../data/statuses.js";
 
+const API = "http://localhost:5000";
+
 export default function StoreProvider({ children }) {
   const [products, setProducts] = useState(PRODUCTS);
   const [cart, setCart] = useState({}); // { productId: quantity }
@@ -32,8 +34,8 @@ export default function StoreProvider({ children }) {
   const cartCount = cartItems.reduce((sum, i) => sum + i.qty, 0);
   const subtotal = cartItems.reduce((sum, i) => sum + i.qty * i.price, 0);
 
-  // Users (mock data until the backend exists)
-  const [users, setUsers] = useState([
+  // Users list (only used by the sign-up form's local checks)
+  const [users] = useState([
     {
       username: "admin",
       email: "admin@tintandtone.co.ke",
@@ -43,29 +45,47 @@ export default function StoreProvider({ children }) {
   ]);
   const [user, setUser] = useState(null); // the signed-in user, or null
 
-  const signIn = (username, password) => {
-    const found = users.find(
-      (u) =>
-        u.username.toLowerCase() === username.trim().toLowerCase() &&
-        u.password === password,
-    );
-    if (!found) return null;
-    setUser(found);
-    return found;
+  const signIn = async (email, password) => {
+    try {
+      const res = await fetch(`${API}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { error: data.error || "Sign in failed." };
+      localStorage.setItem("token", data.token);
+      const u = {
+        username: data.user.name,
+        email: data.user.email,
+        role: data.user.role === "super_admin" ? "admin" : data.user.role,
+      };
+      setUser(u);
+      return { user: u };
+    } catch {
+      return { error: "Could not connect to server." };
+    }
   };
 
-  const signUp = ({ username, email, password }) => {
-    const created = {
-      username: username.trim(),
-      email,
-      password,
-      role: "customer",
-    };
-    setUsers([...users, created]);
-    setUser(created);
+  const signUp = async ({ username, email, password }) => {
+    try {
+      const res = await fetch(`${API}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ full_name: username.trim(), email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { error: data.error || "Sign up failed." };
+      return await signIn(email, password);
+    } catch {
+      return { error: "Could not connect to server." };
+    }
   };
 
-  const signOut = () => setUser(null);
+  const signOut = () => {
+    localStorage.removeItem("token");
+    setUser(null);
+  };
 
   // Orders (mock data until the backend exists)
   const [orders, setOrders] = useState([]);

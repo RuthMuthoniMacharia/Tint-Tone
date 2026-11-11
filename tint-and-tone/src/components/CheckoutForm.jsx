@@ -12,12 +12,7 @@ export default function CheckoutForm({ cartItems, total, onPaid }) {
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
 
-  // Delivery map state
-  const [deliveryLat, setDeliveryLat] = useState(null);
-  const [deliveryLng, setDeliveryLng] = useState(null);
-  const [deliveryFee, setDeliveryFee] = useState(0);
-
-  const grandTotal = (Number(total) || 0) + (Number(deliveryFee) || 0);
+  const grandTotal = Number(total) || 0;
 
   const change = (e) =>
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
@@ -25,19 +20,13 @@ export default function CheckoutForm({ cartItems, total, onPaid }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const found = validateCheckout(form, method);
-    
-    // Require user to select a delivery point on the map
-    if (!deliveryLat || !deliveryLng) {
-      found.map = "Please select a delivery point on the map.";
-    }
-
     setErrors(found);
     if (Object.keys(found).length) return;
 
     setBusy(true);
 
     try {
-      const token = localStorage.getItem("token"); // Retrieve JWT auth token
+      const token = localStorage.getItem("token");
 
       const res = await fetch(`${API}/api/orders`, {
         method: "POST",
@@ -46,12 +35,10 @@ export default function CheckoutForm({ cartItems, total, onPaid }) {
           "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({
-          items: cartItems || [{ product_id: 6, quantity: 1 }], // Fallback to current items
+          items: (cartItems || []).map((i) => ({ product_id: i.id, quantity: i.qty })),
           shipping_address: form.address.trim(),
           payment_method: method,
-          phone: form.phone,
-          delivery_lat: deliveryLat,
-          delivery_lng: deliveryLng
+          phone: form.phone
         })
       });
 
@@ -64,12 +51,12 @@ export default function CheckoutForm({ cartItems, total, onPaid }) {
       }
 
       setBusy(false);
-      onPaid({ 
-        orderId: data.order_id, 
-        address: form.address.trim(), 
-        method, 
+      onPaid({
+        orderId: data.order_id,
+        address: form.address.trim(),
+        method,
         total: grandTotal,
-        message: data.message 
+        message: data.message
       });
 
     } catch (err) {
@@ -81,7 +68,16 @@ export default function CheckoutForm({ cartItems, total, onPaid }) {
   return (
     <form className="stack" onSubmit={handleSubmit} noValidate>
       {errors.pay && <div className="note bad">{errors.pay}</div>}
-      
+
+      <Field
+        label="Delivery address"
+        name="address"
+        value={form.address}
+        onChange={change}
+        error={errors.address}
+        autoComplete="street-address"
+      />
+
       <div className="bar">
         <button
           type="button"
@@ -98,8 +94,6 @@ export default function CheckoutForm({ cartItems, total, onPaid }) {
           Card
         </button>
       </div>
-
-
 
       {method === "mpesa" ? (
         <Field
@@ -141,18 +135,9 @@ export default function CheckoutForm({ cartItems, total, onPaid }) {
         </>
       )}
 
-      {/* Summary Breakdown */}
       <div style={{ marginTop: '10px', fontSize: '0.9rem' }}>
-        <div className="row">
-          <span>Items Subtotal:</span>
-          <span>{kes(total)}</span>
-        </div>
-        <div className="row">
-          <span>Delivery Fee:</span>
-          <span>{deliveryFee ? kes(deliveryFee) : 'KES 0.00'}</span>
-        </div>
         <div className="row" style={{ fontWeight: 'bold', fontSize: '1.05rem', borderBottom: 'none' }}>
-          <span>Grand Total:</span>
+          <span>Total:</span>
           <span>{kes(grandTotal)}</span>
         </div>
       </div>

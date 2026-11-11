@@ -2,6 +2,14 @@ const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
 require('dotenv').config();
+console.log('MPESA_ENABLED =', JSON.stringify(process.env.MPESA_ENABLED));
+console.log('MPESA vars set:', {
+    key: !!process.env.MPESA_CONSUMER_KEY,
+    secret: !!process.env.MPESA_CONSUMER_SECRET,
+    shortcode: !!process.env.MPESA_SHORTCODE,
+    passkey: !!process.env.MPESA_PASSKEY,
+    callback: !!process.env.MPESA_CALLBACK_URL
+});
 
 // AUTO-CREATE DATABASE IF IT DOES NOT EXIST
 (async () => {
@@ -25,6 +33,7 @@ const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
 const shopRoutes = require('./routes/shop');
 const reportRoutes = require('./routes/reports');
+const mpesaRoutes = require('./routes/mpesa');
 const { requireAuth, requireRole } = require('./middleware/auth');
 
 const app = express();
@@ -34,6 +43,9 @@ app.use(express.json());
 
 // Public routes: register, login, forgot/reset password
 app.use('/api/auth', authRoutes);
+
+// M-Pesa: callback (public, called by Safaricom) and payment status
+app.use('/api/mpesa', mpesaRoutes);
 
 // Shop routes: browse products, place orders
 app.use('/api', shopRoutes);
