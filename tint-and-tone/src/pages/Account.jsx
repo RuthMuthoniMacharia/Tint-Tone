@@ -126,7 +126,7 @@ export default function Account() {
           <h2>Sign in</h2>
           {inErrors.form && <div className="note bad">{inErrors.form}</div>}
           <Field
-            label="Email address"
+            label="Username"
             name="username"
             value={inForm.username}
             onChange={change(setInForm)}
@@ -149,12 +149,10 @@ export default function Account() {
         </form>
 
         <form className="col" onSubmit={handleSignUp} noValidate>
-  <h2>Sign up</h2>
-  {upErrors.form && <div className="note bad">{upErrors.form}</div>}
-  {/* autoComplete="off": stops the browser filling in a saved login
+          <h2>Sign up</h2>
+          {upErrors.form && <div className="note bad">{upErrors.form}</div>}
+          {/* autoComplete="off": stops the browser filling in a saved login
       (such as admin) where a brand new username belongs */}
-
-       
 
           <Field
             label="Username"
