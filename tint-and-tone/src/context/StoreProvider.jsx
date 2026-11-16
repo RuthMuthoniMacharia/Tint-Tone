@@ -4,7 +4,7 @@ import { PRODUCTS } from "../data/products.js";
 import { shippingFor } from "../utils/money.js";
 import { nextStatus } from "../data/statuses.js";
 
-const API = "http://localhost:5000";
+import { API } from "../config.js";
 
 export default function StoreProvider({ children }) {
   const [products, setProducts] = useState(PRODUCTS);

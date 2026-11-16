@@ -2,6 +2,10 @@ const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
 require('dotenv').config();
+if (!process.env.JWT_SECRET) {
+    console.error('❌ JWT_SECRET is missing in server/.env. Copy .env.example to .env and set it.');
+    process.exit(1);
+}
 console.log('MPESA_ENABLED =', JSON.stringify(process.env.MPESA_ENABLED));
 console.log('MPESA vars set:', {
     key: !!process.env.MPESA_CONSUMER_KEY,
