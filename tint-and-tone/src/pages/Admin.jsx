@@ -1,6 +1,8 @@
 import { useState } from "react";
 import Inventory from "../components/admin/Inventory.jsx";
 import OrdersList from "../components/admin/OrdersList.jsx";
+import Reports from "../components/admin/Reports.jsx";
+import AuditLog from "../components/admin/AuditLog.jsx";
 import { useStore } from "../context/useStore.js";
 import { PENDING } from "../data/statuses.js";
 import { kes } from "../utils/money.js";
@@ -65,11 +67,27 @@ export default function Admin() {
           >
             Delivered Orders ({countOf("Delivered")})
           </button>
+          <button
+            className={menuClass("reports")}
+            onClick={() => setSection("reports")}
+          >
+            Reports
+          </button>
+          <button
+            className={menuClass("audit")}
+            onClick={() => setSection("audit")}
+          >
+            Audit log
+          </button>
         </nav>
 
         <section className="panel adm-content">
           {section === "items" ? (
             <Inventory />
+          ) : section === "reports" ? (
+            <Reports />
+          ) : section === "audit" ? (
+            <AuditLog />
           ) : (
             <OrdersList status={section} />
           )}
