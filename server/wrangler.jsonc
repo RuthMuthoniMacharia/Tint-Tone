@@ -1,0 +1,12 @@
+{
+  "name": "tint-tone-api",
+  "main": "server.js",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "a08cfb45700b4242bf07eda477ea850a"
+    }
+  ]
+}
