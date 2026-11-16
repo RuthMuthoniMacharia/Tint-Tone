@@ -21,23 +21,31 @@ export default function Inventory() {
   const change = (e) =>
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
-  const handleAdd = (e) => {
+  const handleAdd = async (e) => {
     e.preventDefault();
     const found = validateProduct(form);
     setErrors(found);
     if (Object.keys(found).length) return;
-    addProduct({
+    const result = await addProduct({
       name: form.name.trim(),
       cat: form.cat,
       price: Number(form.price),
       stock: Number(form.stock),
     });
+    if (result?.error) return setErrors({ form: result.error });
     setForm(EMPTY);
+  };
+
+  // Run an update and show any error from the server
+  const save = async (id, patch) => {
+    const result = await updateProduct(id, patch);
+    setErrors(result?.error ? { form: result.error } : {});
   };
 
   return (
     <>
       <h3>Current items</h3>
+      {errors.form && <div className="note bad">{errors.form}</div>}
       <div className="adm-scroll">
         <table>
           <thead>
@@ -60,12 +68,13 @@ export default function Inventory() {
                     className="inp adm-price"
                     type="number"
                     min="1"
-                    value={p.price}
-                    onChange={(e) =>
-                      updateProduct(p.id, {
-                        price: Number(e.target.value) || 1,
-                      })
-                    }
+                    key={`${p.id}-${p.price}`}
+                    defaultValue={p.price}
+                    onBlur={(e) => {
+                      const price = Number(e.target.value);
+                      if (price > 0 && price !== p.price) save(p.id, { price });
+                      else e.target.value = p.price;
+                    }}
                   />
                 </td>
                 <td>
@@ -78,13 +87,13 @@ export default function Inventory() {
                 <td>
                   <button
                     className="btn sm"
-                    onClick={() => updateProduct(p.id, { stock: p.stock + 10 })}
+                    onClick={() => save(p.id, { stock: p.stock + 10 })}
                   >
                     +10 stock
                   </button>{" "}
                   <button
                     className="btn sm ghost"
-                    onClick={() => updateProduct(p.id, { active: !p.active })}
+                    onClick={() => save(p.id, { active: !p.active })}
                   >
                     {p.active ? "Discontinue" : "Restore"}
                   </button>
