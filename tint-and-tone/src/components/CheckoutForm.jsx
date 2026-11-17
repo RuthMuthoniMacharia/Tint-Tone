@@ -4,7 +4,7 @@ import { kes } from "../utils/money.js";
 import { validateCheckout } from "../utils/validate.js";
 
 const EMPTY = { address: "", phone: "", card: "", exp: "", cvv: "" };
-const API = 'http://localhost:5000';
+import { API } from "../config.js";
 
 export default function CheckoutForm({ cartItems, total, onPaid }) {
   const [method, setMethod] = useState("mpesa");

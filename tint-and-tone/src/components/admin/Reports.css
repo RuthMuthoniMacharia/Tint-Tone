@@ -1,0 +1,72 @@
+/* Reports and audit log screens */
+.rpt-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin-bottom: 16px;
+}
+.rpt-form > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rpt-form label {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.rpt-sheet {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px;
+  background: #fff;
+}
+.rpt-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 2px solid var(--rose);
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+}
+.rpt-logo {
+  height: 56px;
+  width: auto;
+}
+.rpt-head h3 {
+  margin: 0;
+}
+.rpt-meta {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 2px 0;
+}
+.rpt-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin: 12px 0;
+  font-size: 0.95rem;
+}
+.rpt-sheet td.num,
+.rpt-sheet th.num {
+  text-align: right;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .rpt-sheet,
+  .rpt-sheet * {
+    visibility: visible;
+  }
+  .rpt-sheet {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    border: 0;
+  }
+}

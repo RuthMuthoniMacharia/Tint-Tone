@@ -1,13 +1,52 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { StoreContext } from "./StoreContext.js";
-import { PRODUCTS } from "../data/products.js";
 import { shippingFor } from "../utils/money.js";
 import { nextStatus } from "../data/statuses.js";
 
-const API = "http://localhost:5000";
+import { API } from "../config.js";
+
+// Header with the saved login token, for admin requests
+const authHeaders = () => ({
+  "Content-Type": "application/json",
+  Authorization: `Bearer ${localStorage.getItem("token")}`,
+});
+
+// The database has no icon column, so pick an icon and colour from the product name
+const LOOKS = [
+  [/cleanser|wash/i, "🧴", 200],
+  [/serum|vitamin/i, "🍊", 35],
+  [/spf|sun/i, "☀️", 50],
+  [/moistur/i, "💧", 190],
+  [/night|cream/i, "🌙", 260],
+  [/toner|mist|rose/i, "🌹", 345],
+  [/lip/i, "💄", 335],
+  [/foundation|concealer/i, "🎨", 25],
+  [/mascara|eye|liner/i, "👁️", 280],
+  [/blush|palette/i, "🌸", 350],
+  [/powder|setting/i, "✨", 40],
+  [/bronzer|contour/i, "🌞", 30],
+];
+
+// Convert a database row into the shape the UI uses
+const fromDb = (r) => {
+  const cat = /make/i.test(r.category_name || "") ? "makeup" : "skin";
+  const look = LOOKS.find(([re]) => re.test(r.name));
+  return {
+    id: r.product_id,
+    category_id: r.category_id,
+    name: r.name,
+    cat,
+    price: Number(r.price),
+    stock: r.stock_quantity,
+    active: r.is_active === undefined ? true : !!r.is_active,
+    icon: look ? look[1] : cat === "skin" ? "🧴" : "💄",
+    hue: look ? look[2] : cat === "skin" ? 200 : 340,
+  };
+};
 
 export default function StoreProvider({ children }) {
-  const [products, setProducts] = useState(PRODUCTS);
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [cart, setCart] = useState({}); // { productId: quantity }
 
   const addToCart = (product) => {
@@ -35,14 +74,7 @@ export default function StoreProvider({ children }) {
   const subtotal = cartItems.reduce((sum, i) => sum + i.qty * i.price, 0);
 
   // Users list (only used by the sign-up form's local checks)
-  const [users] = useState([
-    {
-      username: "admin",
-      email: "admin@tintandtone.co.ke",
-      password: "admin123",
-      role: "admin",
-    },
-  ]);
+  const [users] = useState([]);
   const [user, setUser] = useState(null); // the signed-in user, or null
 
   const signIn = async (email, password) => {
@@ -86,6 +118,39 @@ export default function StoreProvider({ children }) {
     localStorage.removeItem("token");
     setUser(null);
   };
+
+  // Load products from the database. Admins also see discontinued ones.
+  const loadProducts = useCallback(async (asAdmin) => {
+    try {
+      const res = await fetch(
+        asAdmin ? `${API}/api/admin/products` : `${API}/api/products`,
+        asAdmin ? { headers: authHeaders() } : undefined,
+      );
+      if (!res.ok) return;
+      const rows = await res.json();
+      setProducts(rows.map(fromDb));
+    } catch {
+      /* server unreachable: keep the current list */
+    }
+  }, []);
+
+  useEffect(() => {
+    const asAdmin = user?.role === "admin";
+    fetch(
+      asAdmin ? `${API}/api/admin/products` : `${API}/api/products`,
+      asAdmin ? { headers: authHeaders() } : undefined,
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((rows) => rows && setProducts(rows.map(fromDb)))
+      .catch(() => {});
+  }, [user]);
+
+  useEffect(() => {
+    fetch(`${API}/api/categories`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setCategories)
+      .catch(() => {});
+  }, []);
 
   // Orders (mock data until the backend exists)
   const [orders, setOrders] = useState([]);
@@ -133,24 +198,54 @@ export default function StoreProvider({ children }) {
     return { ok: true, id };
   };
 
-  // Admin actions
-  const updateProduct = (id, patch) =>
-    setProducts(products.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  // Admin actions: saved to the database, then the list is reloaded
+  const updateProduct = async (id, patch) => {
+    const p = products.find((x) => x.id === id);
+    if (!p) return { error: "Product not found." };
+    const next = { ...p, ...patch };
+    try {
+      const res = await fetch(`${API}/api/admin/products/${id}`, {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          category_id: next.category_id,
+          name: next.name,
+          price: next.price,
+          stock_quantity: next.stock,
+          is_active: next.active,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { error: data.error || "Could not update product." };
+      await loadProducts(true);
+      return { ok: true };
+    } catch {
+      return { error: "Could not connect to server." };
+    }
+  };
 
-  const addProduct = ({ name, cat, price, stock }) =>
-    setProducts([
-      ...products,
-      {
-        id: Date.now(),
-        name,
-        cat,
-        price,
-        stock,
-        active: true,
-        icon: cat === "skin" ? "🧴" : "💄",
-        hue: 340,
-      },
-    ]);
+  const addProduct = async ({ name, cat, price, stock }) => {
+    const category = categories.find((c) => (cat === "skin") === /skin/i.test(c.name));
+    if (!category) return { error: "Categories not loaded. Try again." };
+    try {
+      const res = await fetch(`${API}/api/admin/products`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          category_id: category.category_id,
+          name,
+          price,
+          stock_quantity: stock,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { error: data.error || "Could not add product." };
+      await loadProducts(true);
+      return { ok: true };
+    } catch {
+      return { error: "Could not connect to server." };
+    }
+  };
 
   const advanceOrder = (id) =>
     setOrders(
@@ -164,6 +259,7 @@ export default function StoreProvider({ children }) {
   const value = {
     products,
     setProducts,
+    refreshProducts: () => loadProducts(user?.role === "admin"),
     cartItems,
     cartCount,
     subtotal,
